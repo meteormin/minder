@@ -10,6 +10,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/meteormin/minder"
@@ -17,13 +18,12 @@ import (
 
 type FileTree struct {
 	*widget.Tree
-	rootDir string
+	rootDir    string
+	showHidden bool
 }
 
-// newFileTree 지정한 루트로
-func newFileTree(c *minder.Context) (*FileTree, error) {
-	logger, _ := c.Get("logger").(*slog.Logger)
-	root, _ := c.Get("filePath").(string)
+// NewFileTree 지정한 루트로
+func NewFileTree(root string, showHidden bool, onSelected func(uid string), w fyne.Window) (*FileTree, error) {
 	if root == "" {
 		wd, err := os.Getwd()
 		if err != nil {
@@ -33,7 +33,8 @@ func newFileTree(c *minder.Context) (*FileTree, error) {
 	}
 
 	ft := &FileTree{
-		rootDir: root,
+		rootDir:    root,
+		showHidden: showHidden,
 	}
 
 	// ✅ 콜백 생성자 사용
@@ -57,13 +58,13 @@ func newFileTree(c *minder.Context) (*FileTree, error) {
 
 		// 루트 밖 선택 방지
 		if rel, err := filepath.Rel(ft.rootDir, uid); err != nil || strings.HasPrefix(rel, "..") {
-			logger.Error("skip selection out of root", "uid", uid, "err", err)
+			dialog.ShowError(err, w)
 			return
 		}
 
 		info, err := os.Lstat(uid)
 		if err != nil {
-			logger.Error("stat error", "uid", uid, "err", err)
+			dialog.ShowError(err, w)
 			return
 		}
 
@@ -83,11 +84,7 @@ func newFileTree(c *minder.Context) (*FileTree, error) {
 			}
 			return
 		}
-
-		logger.Info("select file", "selectedFile", uid)
-
-		c.Set("selectedFile", uid)
-		c.Container().RefreshMainFrame()
+		onSelected(uid)
 	}
 
 	// 화살표(▶)로 폴더가 열릴 때도 동일 로직 수행
@@ -133,7 +130,7 @@ func (ft *FileTree) childUIDs(uid string) []string {
 	for _, e := range entries {
 		name := e.Name()
 		// 숨김 파일/폴더 제외
-		if strings.HasPrefix(name, ".") {
+		if !ft.showHidden && strings.HasPrefix(name, ".") {
 			continue
 		}
 		full := filepath.Join(path, name)
@@ -212,17 +209,35 @@ func (ft *FileTree) updateItem(uid string, branch bool, obj fyne.CanvasObject) {
 	}
 }
 
-type FileSelector struct {
-}
-
 func Pathfinder(c *minder.Context) fyne.CanvasObject {
 	logger, _ := c.Get("logger").(*slog.Logger)
-	currentDir := c.Get("filePath").(string)
+	currentDir, ok := c.Get("filePath").(string)
+	if !ok {
+		currentDir = ""
+	}
+
+	showHidden, ok := c.Get("hidden").(bool)
+	if !ok {
+		showHidden = false
+	}
+
 	label := widget.NewLabel(currentDir)
-	fTree, err := newFileTree(c)
+	fTree, err := NewFileTree(currentDir, showHidden, func(uid string) {
+		c.Set("selectedFile", uid)
+		c.Container().RefreshMainFrame()
+	}, c.Window())
 	if err != nil {
 		logger.Error("failed new file tree", "err", err)
 		panic(err)
 	}
-	return container.NewBorder(label, nil, nil, nil, fTree)
+
+	check := widget.NewCheck("hidden", func(b bool) {
+		c.Set("hidden", b)
+		c.Container().RefreshSideBar()
+	})
+	check.Checked = showHidden
+
+	topBox := container.NewVBox(label, check)
+
+	return container.NewBorder(topBox, nil, nil, nil, fTree)
 }
