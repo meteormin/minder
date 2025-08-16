@@ -81,13 +81,13 @@ func Call(c *minder.Context, cmd string) (string, error) {
 	args.history(c)
 	switch args.cmd {
 	case "cd":
-		return handleCd(c, args.args[0])
+		return handleChangeDirectory(c, args.args[0])
 	case "clear":
 		return handleClear(c)
 	case "cp":
 		return handleCopy(c, args.args[0], args.args[1])
 	case "mkdir":
-		return cmdMakeDirectory(c, args.args[0])
+		return handleMakeDirectory(c, args.args[0])
 	case "mv":
 		return handleMove(c, args.args[0], args.args[1])
 	case "rm":
