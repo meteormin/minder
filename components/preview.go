@@ -2,10 +2,12 @@ package components
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -30,40 +32,50 @@ type Previewer struct {
 func (p *Previewer) RenderFile(path string) (fyne.CanvasObject, error) {
 	ext := strings.ToLower(filepath.Ext(path))
 
+	var rendered fyne.CanvasObject
+	var err error
 	switch ext {
 	case ".md", ".markdown", ".html", ".htm":
 		// md/html은 “보기↔편집 토글” 문서 렌더러로
-		return p.renderSmartText(path)
+		rendered, err = p.renderSmartText(path)
 	default:
-		if p.isImageRenderable(path) {
+		r, imgErr := p.asImageReader(path)
+		if imgErr == nil {
 			// 이미지: 버튼/툴바 없이 뷰어 전용
-			return p.renderImage(path)
-		}
-		if p.isTextRenderable(path) {
+			rendered, err = p.renderImage(r, path)
+		} else if p.isTextRenderable(path) {
 			// 일반 텍스트: 보기↔편집 토글
-			return p.renderSmartText(path)
+			rendered, err = p.renderSmartText(path)
+		} else {
+			rendered = container.NewCenter(widget.NewLabel(imgErr.Error()))
 		}
-		return container.NewPadded(container.NewCenter(widget.NewLabel("unsupported file type"))), nil
 	}
+
+	card := widget.NewCard(filepath.Base(path), ext, rendered)
+	return container.NewPadded(card), err
 }
 
-func (p *Previewer) isImageRenderable(path string) bool {
-	f, err := os.Open(path)
+func (p *Previewer) asImageReader(path string) (io.Reader, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return false
+		return nil, err
 	}
-	defer func(f *os.File) {
-		err = f.Close()
-		if err != nil {
-			p.logger.Error("failed close file", "err", err)
-		}
-	}(f)
 
+	r := bytes.NewReader(data)
 	// 시그니처만 읽어 포맷 판별
-	buf := make([]byte, 512)
-	n, _ := f.Read(buf)
-	_, format, err := image.DecodeConfig(bytes.NewReader(buf[:n]))
-	return err == nil && format != ""
+	_, format, err := image.DecodeConfig(r)
+	if err != nil {
+		return nil, err
+	}
+	if format == "" {
+		return nil, errors.New("invalid image format")
+	}
+	_, err = r.Seek(0, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	return r, nil
 }
 
 func (p *Previewer) isTextRenderable(path string) bool {
@@ -80,8 +92,8 @@ func (p *Previewer) isTextRenderable(path string) bool {
 	return true
 }
 
-func (p *Previewer) renderImage(path string) (fyne.CanvasObject, error) {
-	img := canvas.NewImageFromFile(path)
+func (p *Previewer) renderImage(r io.Reader, path string) (fyne.CanvasObject, error) {
+	img := canvas.NewImageFromReader(r, path)
 	img.FillMode = canvas.ImageFillContain
 	img.SetMinSize(fyne.NewSize(800, 600))
 	return container.NewPadded(container.NewCenter(img)), nil
@@ -235,7 +247,7 @@ func Preview(c *minder.Context) fyne.CanvasObject {
 	selectedFile, _ := c.Get("selectedFile").(string)
 	p := &Previewer{
 		logger:            logger,
-		maxTextRenderSize: 1024 * 1024 * 10, // 10MB
+		maxTextRenderSize: 1024 * 1024, // 1MB
 	}
 
 	if selectedFile == "" {

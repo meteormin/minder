@@ -8,7 +8,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"github.com/meteormin/minder"
-	"github.com/meteormin/minder/commands"
 	"github.com/meteormin/minder/components"
 )
 
@@ -69,23 +68,11 @@ func main() {
 	}
 
 	c.Container().SideBar(func() fyne.CanvasObject {
-		return components.Pathfinder(c, func(c *minder.Context, s string) {
-			logger.Info("select file", "selectedFile", s)
-			c.Set("selectedFile", s)
-			c.Container().RefreshMainFrame()
-		})
+		return components.Pathfinder(c)
 	})
 
 	c.Container().Bottom(func() fyne.CanvasObject {
-		return components.Terminal(c, func(c *minder.Context, console *components.Console) {
-			cmd := console.Command()
-			rs, cmdErr := commands.Call(c, cmd)
-			if cmdErr != nil {
-				console.Println(cmdErr.Error())
-				return
-			}
-			console.Println(rs)
-		})
+		return components.Terminal(c)
 	})
 
 	c.Container().MainFrame(func() fyne.CanvasObject {

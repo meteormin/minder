@@ -13,6 +13,14 @@ import (
 	"github.com/meteormin/minder"
 )
 
+var cmdRm = Cmd{
+	Name: "rm",
+	Args: []string{"<src>", "<dst>"},
+	Exec: func(c *minder.Context, args []string) (string, error) {
+		return handleRemove(c, args[0])
+	},
+}
+
 type rmMode int
 
 const (

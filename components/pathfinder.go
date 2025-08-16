@@ -17,12 +17,11 @@ import (
 
 type FileTree struct {
 	*widget.Tree
-	rootDir        string
-	onFileSelected func(c *minder.Context, s string)
+	rootDir string
 }
 
-// NewFileTree 지정한 루트로
-func NewFileTree(c *minder.Context, onFileSelected func(c *minder.Context, s string)) (*FileTree, error) {
+// newFileTree 지정한 루트로
+func newFileTree(c *minder.Context) (*FileTree, error) {
 	logger, _ := c.Get("logger").(*slog.Logger)
 	root, _ := c.Get("filePath").(string)
 	if root == "" {
@@ -34,8 +33,7 @@ func NewFileTree(c *minder.Context, onFileSelected func(c *minder.Context, s str
 	}
 
 	ft := &FileTree{
-		rootDir:        root,
-		onFileSelected: onFileSelected,
+		rootDir: root,
 	}
 
 	// ✅ 콜백 생성자 사용
@@ -52,9 +50,11 @@ func NewFileTree(c *minder.Context, onFileSelected func(c *minder.Context, s str
 
 	// ✅ 폴더 토글
 	ft.Tree.OnSelected = func(uid string) {
+		ft.Tree.UnselectAll()
 		if uid == "" {
 			return
 		}
+
 		// 루트 밖 선택 방지
 		if rel, err := filepath.Rel(ft.rootDir, uid); err != nil || strings.HasPrefix(rel, "..") {
 			logger.Error("skip selection out of root", "uid", uid, "err", err)
@@ -81,13 +81,13 @@ func NewFileTree(c *minder.Context, onFileSelected func(c *minder.Context, s str
 			} else {
 				ft.Tree.OpenBranch(uid)
 			}
-			ft.Tree.UnselectAll()
 			return
 		}
 
-		if ft.onFileSelected != nil {
-			ft.onFileSelected(c, uid)
-		}
+		logger.Info("select file", "selectedFile", uid)
+
+		c.Set("selectedFile", uid)
+		c.Container().RefreshMainFrame()
 	}
 
 	// 화살표(▶)로 폴더가 열릴 때도 동일 로직 수행
@@ -215,11 +215,11 @@ func (ft *FileTree) updateItem(uid string, branch bool, obj fyne.CanvasObject) {
 type FileSelector struct {
 }
 
-func Pathfinder(c *minder.Context, onFileSelected func(c *minder.Context, s string)) fyne.CanvasObject {
+func Pathfinder(c *minder.Context) fyne.CanvasObject {
 	logger, _ := c.Get("logger").(*slog.Logger)
 	currentDir := c.Get("filePath").(string)
 	label := widget.NewLabel(currentDir)
-	fTree, err := NewFileTree(c, onFileSelected)
+	fTree, err := newFileTree(c)
 	if err != nil {
 		logger.Error("failed new file tree", "err", err)
 		panic(err)

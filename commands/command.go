@@ -10,12 +10,43 @@ import (
 	"github.com/meteormin/minder"
 )
 
-type Args struct {
-	cmd  string
-	args []string
+var commands = map[string]Cmd{
+	cmdCd.Name:    cmdCd,
+	cmdClear.Name: cmdClear,
+	cmdTouch.Name: cmdTouch,
+	cmdMkdir.Name: cmdMkdir,
+	cmdCopy.Name:  cmdCopy,
+	cmdMove.Name:  cmdMove,
+	cmdRm.Name:    cmdRm,
+	cmdExit.Name:  cmdExit,
 }
 
-func (args Args) history(c *minder.Context) {
+var (
+	cmdHelp = Cmd{
+		Name:  "help",
+		Usage: "help",
+		Exec: func(_ *minder.Context, _ []string) (string, error) {
+			return help()
+		},
+	}
+
+	cmdExit = Cmd{
+		Name:  "exit",
+		Usage: "exit",
+		Exec: func(c *minder.Context, _ []string) (string, error) {
+			return exit(c)
+		},
+	}
+)
+
+type Cmd struct {
+	Name  string
+	Args  []string
+	Usage string
+	Exec  func(c *minder.Context, args []string) (string, error)
+}
+
+func (cmd Cmd) history(c *minder.Context) {
 	logger, _ := c.Get("logger").(*slog.Logger)
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -40,13 +71,13 @@ func (args Args) history(c *minder.Context) {
 	}(file)
 
 	var builder strings.Builder
-	_, err = fmt.Fprintf(&builder, "[%d] %s ", pid, args.cmd)
+	_, err = fmt.Fprintf(&builder, "[%d] %s ", pid, cmd.Name)
 	if err != nil {
-		logger.Error("failed write command", "cmd", args.cmd, "err", err)
+		logger.Error("failed write command", "cmd", cmd.Name, "err", err)
 		return
 	}
 
-	builder.WriteString(strings.Join(args.args, " "))
+	builder.WriteString(strings.Join(cmd.Args, " "))
 	builder.WriteString("\n")
 	data := builder.String()
 	// file.Write() 메서드를 사용하여 데이터 쓰기
@@ -55,23 +86,33 @@ func (args Args) history(c *minder.Context) {
 	}
 }
 
-func parseArgs(cmd string) Args {
+func parseArgs(cmd string) Cmd {
 	s := strings.Split(cmd, " ")
-	return Args{cmd: s[0], args: s[1:]}
+	c, ok := commands[s[0]]
+	if !ok {
+		return cmdHelp
+	}
+	c.Args = s[1:]
+	return c
 }
 
-func handleHelp() (string, error) {
+func help() (string, error) {
 	sb := strings.Builder{}
 	sb.WriteString("Usage: COMMAND [ARG...]\n\n")
 	sb.WriteString("Available Commands:\n")
-	sb.WriteString("  cd <dest>\n")
-	sb.WriteString("  clear\n")
-	sb.WriteString("  mkdir <dest>\n")
-	sb.WriteString("  touch <dest>\n")
+	for name, c := range commands {
+		var usage string
+		if c.Usage != "" {
+			usage = c.Usage
+		} else {
+			usage = name + " " + strings.Join(c.Args, " ")
+		}
+		sb.WriteString("  " + usage + "\n")
+	}
 	return sb.String(), nil
 }
 
-func handleExit(c *minder.Context) (string, error) {
+func exit(c *minder.Context) (string, error) {
 	c.Window().Close()
 	return "", nil
 }
@@ -79,24 +120,5 @@ func handleExit(c *minder.Context) (string, error) {
 func Call(c *minder.Context, cmd string) (string, error) {
 	args := parseArgs(cmd)
 	args.history(c)
-	switch args.cmd {
-	case "cd":
-		return handleChangeDirectory(c, args.args[0])
-	case "clear":
-		return handleClear(c)
-	case "cp":
-		return handleCopy(c, args.args[0], args.args[1])
-	case "mkdir":
-		return handleMakeDirectory(c, args.args[0])
-	case "mv":
-		return handleMove(c, args.args[0], args.args[1])
-	case "rm":
-		return handleRemove(c, args.args[0])
-	case "touch":
-		return handleTouch(c, args.args[0])
-	case "exit":
-		return handleExit(c)
-	default:
-		return handleHelp()
-	}
+	return args.Exec(c, args.Args)
 }

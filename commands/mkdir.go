@@ -7,8 +7,16 @@ import (
 	"github.com/meteormin/minder"
 )
 
-func handleMakeDirectory(c *minder.Context, dest string) (string, error) {
-	fp, err := pathToAbs(c, dest)
+var cmdMkdir = Cmd{
+	Name: "mkdir",
+	Args: []string{"<dst>"},
+	Exec: func(c *minder.Context, args []string) (string, error) {
+		return handleMakeDirectory(c, args[0])
+	},
+}
+
+func handleMakeDirectory(c *minder.Context, dst string) (string, error) {
+	fp, err := pathToAbs(c, dst)
 	if err != nil {
 		return "", err
 	}

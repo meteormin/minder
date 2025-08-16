@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 	"github.com/meteormin/minder"
+	"github.com/meteormin/minder/commands"
 )
 
 type Console struct {
@@ -18,7 +19,7 @@ type Console struct {
 	cmd    string
 }
 
-func (cs *Console) Println(line string) {
+func (cs *Console) println(line string) {
 	cs.mu.Lock()
 	cs.buf.WriteString(line)
 	cs.buf.WriteByte('\n')
@@ -32,11 +33,21 @@ func (cs *Console) Println(line string) {
 	})
 }
 
-func (cs *Console) Command() string {
+func (cs *Console) command() string {
 	return cs.cmd
 }
 
-func Terminal(c *minder.Context, onSubmitted func(c *minder.Context, console *Console)) fyne.CanvasObject {
+func (cs *Console) handleSubmitted(c *minder.Context) {
+	cmd := cs.command()
+	rs, cmdErr := commands.Call(c, cmd)
+	if cmdErr != nil {
+		cs.println(cmdErr.Error())
+		return
+	}
+	cs.println(rs)
+}
+
+func Terminal(c *minder.Context) fyne.CanvasObject {
 	// 히스토리: TextGrid + 바깥 VScroll (Entry 아님)
 	grid := widget.NewTextGrid()
 	scroll := container.NewVScroll(grid)
@@ -53,11 +64,11 @@ func Terminal(c *minder.Context, onSubmitted func(c *minder.Context, console *Co
 		}
 		// 프롬프트와 함께 즉시 출력 (UI 스레드)
 		console.cmd = s
-		console.Println("> " + s)
+		console.println("> " + s)
 		input.SetText("")
 
 		// 실제 처리는 고루틴에서, UI 갱신은 console.Println 사용
-		go onSubmitted(c, console)
+		go console.handleSubmitted(c)
 	}
 
 	bottom := container.NewBorder(nil, nil, prompt, nil, input)
