@@ -67,27 +67,33 @@ func (c *LayoutContainer) Bottom(buildFunc func() fyne.CanvasObject) {
 }
 
 func (c *LayoutContainer) RefreshSideBar() {
-	o := c.side.build()
-	if o != nil {
-		c.side.c.Objects = []fyne.CanvasObject{container.NewPadded(container.NewScroll(o))}
-	}
-	c.side.c.Refresh()
+	fyne.Do(func() {
+		o := c.side.build()
+		if o != nil {
+			c.side.c.Objects = []fyne.CanvasObject{container.NewPadded(container.NewScroll(o))}
+		}
+		c.side.c.Refresh()
+	})
 }
 
 func (c *LayoutContainer) RefreshMainFrame() {
-	o := c.main.build()
-	if o != nil {
-		c.main.c.Objects = []fyne.CanvasObject{container.NewPadded(container.NewScroll(o))}
-	}
-	c.main.c.Refresh()
+	fyne.Do(func() {
+		o := c.main.build()
+		if o != nil {
+			c.main.c.Objects = []fyne.CanvasObject{container.NewPadded(container.NewScroll(o))}
+		}
+		c.main.c.Refresh()
+	})
 }
 
 func (c *LayoutContainer) RefreshBottom() {
-	o := c.bottom.build()
-	if o != nil {
-		c.bottom.c.Objects = []fyne.CanvasObject{container.NewPadded(container.NewScroll(o))}
-	}
-	c.bottom.c.Refresh()
+	fyne.Do(func() {
+		o := c.bottom.build()
+		if o != nil {
+			c.bottom.c.Objects = []fyne.CanvasObject{container.NewPadded(container.NewScroll(o))}
+		}
+		c.bottom.c.Refresh()
+	})
 }
 
 func mainContainer(c *Context) {
