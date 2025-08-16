@@ -94,9 +94,12 @@ func (p *Previewer) isTextRenderable(path string) bool {
 
 func (p *Previewer) renderImage(r io.Reader, path string) (fyne.CanvasObject, error) {
 	img := canvas.NewImageFromReader(r, path)
-	img.FillMode = canvas.ImageFillContain
-	img.SetMinSize(fyne.NewSize(800, 600))
-	return container.NewPadded(container.NewCenter(img)), nil
+	if img != nil {
+		img.FillMode = canvas.ImageFillContain
+		img.SetMinSize(fyne.NewSize(800, 600))
+		return container.NewPadded(container.NewCenter(img)), nil
+	}
+	return container.NewPadded(container.NewCenter(widget.NewLabel("failed render image"))), nil
 }
 
 func (p *Previewer) renderSmartText(path string) (fyne.CanvasObject, error) {
