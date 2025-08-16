@@ -60,7 +60,7 @@ func parseArgs(cmd string) Args {
 	return Args{cmd: s[0], args: s[1:]}
 }
 
-func help() (string, error) {
+func handleHelp() (string, error) {
 	sb := strings.Builder{}
 	sb.WriteString("Usage: COMMAND [ARG...]\n\n")
 	sb.WriteString("Available Commands:\n")
@@ -71,7 +71,7 @@ func help() (string, error) {
 	return sb.String(), nil
 }
 
-func exit(c *minder.Context) (string, error) {
+func handleExit(c *minder.Context) (string, error) {
 	c.Window().Close()
 	return "", nil
 }
@@ -81,16 +81,22 @@ func Call(c *minder.Context, cmd string) (string, error) {
 	args.history(c)
 	switch args.cmd {
 	case "cd":
-		return changeDirectory(c, args.args[0])
-	case "mkdir":
-		return makeDirectory(c, args.args[0])
-	case "touch":
-		return touch(c, args.args[0])
+		return handleCd(c, args.args[0])
 	case "clear":
-		return clearHistory(c)
+		return handleClear(c)
+	case "cp":
+		return handleCopy(c, args.args[0], args.args[1])
+	case "mkdir":
+		return cmdMakeDirectory(c, args.args[0])
+	case "mv":
+		return handleMove(c, args.args[0], args.args[1])
+	case "rm":
+		return handleRemove(c, args.args[0])
+	case "touch":
+		return handleTouch(c, args.args[0])
 	case "exit":
-		return exit(c)
+		return handleExit(c)
 	default:
-		return help()
+		return handleHelp()
 	}
 }

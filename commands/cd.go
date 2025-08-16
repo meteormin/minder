@@ -6,8 +6,8 @@ import (
 	"github.com/meteormin/minder"
 )
 
-func changeDirectory(c *minder.Context, dest string) (string, error) {
-	fp, err := pathToAbs(c, dest)
+func handleCd(c *minder.Context, dst string) (string, error) {
+	fp, err := pathToAbs(c, dst)
 	if err != nil {
 		return "", err
 	}

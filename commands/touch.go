@@ -7,7 +7,7 @@ import (
 	"github.com/meteormin/minder"
 )
 
-func touch(c *minder.Context, dest string) (string, error) {
+func handleTouch(c *minder.Context, dest string) (string, error) {
 	fp, err := pathToAbs(c, dest)
 	if err != nil {
 		return "", err

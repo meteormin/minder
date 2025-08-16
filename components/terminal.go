@@ -1,6 +1,9 @@
 package components
 
 import (
+	"strings"
+	"sync"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
@@ -8,52 +11,55 @@ import (
 )
 
 type Console struct {
-	entry *widget.Entry
-	cmd   string
+	grid   *widget.TextGrid
+	scroll *container.Scroll
+	buf    strings.Builder
+	mu     sync.Mutex
+	cmd    string
 }
 
-func (c *Console) Command() string {
-	return c.cmd
+func (cs *Console) Println(line string) {
+	cs.mu.Lock()
+	cs.buf.WriteString(line)
+	cs.buf.WriteByte('\n')
+	text := cs.buf.String()
+	cs.mu.Unlock()
+
+	fyne.Do(func() {
+		cs.grid.SetText(text)
+		// 레이아웃 반영 직후 바닥으로
+		cs.scroll.ScrollToBottom()
+	})
 }
 
-func (c *Console) AddMessage(msg string) {
-	c.entry.Text += msg + "\n"
-	c.entry.Refresh()
+func (cs *Console) Command() string {
+	return cs.cmd
 }
 
 func Terminal(c *minder.Context, onSubmitted func(c *minder.Context, console *Console)) fyne.CanvasObject {
-	history := widget.NewMultiLineEntry()
-	history.Wrapping = fyne.TextWrapOff
-	history.SetPlaceHolder("") // 플레이스홀더 제거
-	history.SetMinRowsVisible(5)
-	history.Disable()
-	scroll := container.NewVScroll(history)
+	// 히스토리: TextGrid + 바깥 VScroll (Entry 아님)
+	grid := widget.NewTextGrid()
+	scroll := container.NewVScroll(grid)
 
-	prompt := widget.NewLabel(">") // 프롬프트
+	console := &Console{grid: grid, scroll: scroll}
+
+	// 프롬프트 + 입력
+	prompt := widget.NewLabel(">")
 	input := widget.NewEntry()
 	input.SetPlaceHolder("type here and press Enter")
 	input.OnSubmitted = func(s string) {
 		if s == "" {
 			return
 		}
-		// 기록 추가
-		history.Enable()
-		history.SetText(history.Text + "> " + s + "\n")
-		history.Disable()
+		// 프롬프트와 함께 즉시 출력 (UI 스레드)
+		console.cmd = s
+		console.Println("> " + s)
 		input.SetText("")
 
-		// 최신 줄로 스크롤
-		scroll.ScrollToBottom()
-
-		console := &Console{
-			entry: history,
-			cmd:   s,
-		}
-
-		onSubmitted(c, console)
+		// 실제 처리는 고루틴에서, UI 갱신은 console.Println 사용
+		go onSubmitted(c, console)
 	}
 
-	// 레이아웃
-	promptUI := container.NewBorder(nil, nil, prompt, nil, input)
-	return container.NewBorder(nil, promptUI, nil, nil, scroll)
+	bottom := container.NewBorder(nil, nil, prompt, nil, input)
+	return container.NewBorder(nil, bottom, nil, nil, scroll)
 }

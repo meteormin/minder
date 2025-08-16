@@ -81,10 +81,10 @@ func main() {
 			cmd := console.Command()
 			rs, cmdErr := commands.Call(c, cmd)
 			if cmdErr != nil {
-				console.AddMessage(cmdErr.Error())
+				console.Println(cmdErr.Error())
 				return
 			}
-			console.AddMessage(rs)
+			console.Println(rs)
 		})
 	})
 
