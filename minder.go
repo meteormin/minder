@@ -1,106 +1,135 @@
 package minder
 
 import (
-	"context"
+	"log/slog"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
+	"github.com/meteormin/minder/components"
 )
 
+type Store struct {
+	Pathfinder  components.PathfinderState
+	PreviewPath binding.String
+	Terminal    components.TerminalState
+}
+
 type Context struct {
-	ctx       context.Context
-	window    fyne.Window
-	container *LayoutContainer
+	store  *Store
+	logger *slog.Logger
+	window fyne.Window
+	layout *Layout
 }
 
-func (c *Context) Set(key string, value any) {
-	c.ctx = context.WithValue(c.ctx, key, value)
+func (c *Context) Store() *Store {
+	return c.store
 }
 
-func (c *Context) Get(key string) any {
-	return c.ctx.Value(key)
+func (c *Context) Logger() *slog.Logger {
+	return c.logger
 }
 
 func (c *Context) Window() fyne.Window {
 	return c.window
 }
 
-func (c *Context) Container() *LayoutContainer {
-	return c.container
+func (c *Context) Layout() *Layout {
+	return c.layout
+}
+
+type Layout struct {
+	sideBar   *LayoutContainer
+	mainFrame *LayoutContainer
+	bottom    *LayoutContainer
 }
 
 type LayoutContainer struct {
-	side   *SideContainer
-	main   *MainContainer
-	bottom *BottomContainer
+	container *fyne.Container
+	render    func()
 }
 
-type SideContainer struct {
-	c     *fyne.Container
-	build func() fyne.CanvasObject
+func (l *Layout) SideBar() *fyne.Container {
+	return l.sideBar.container
 }
 
-type MainContainer struct {
-	c     *fyne.Container
-	build func() fyne.CanvasObject
-}
-
-type BottomContainer struct {
-	c     *fyne.Container
-	build func() fyne.CanvasObject
-}
-
-func (c *LayoutContainer) SideBar(buildFunc func() fyne.CanvasObject) {
-	c.side.build = buildFunc
-	c.RefreshSideBar()
-}
-
-func (c *LayoutContainer) MainFrame(buildFunc func() fyne.CanvasObject) {
-	c.main.build = buildFunc
-	c.RefreshMainFrame()
-}
-
-func (c *LayoutContainer) Bottom(buildFunc func() fyne.CanvasObject) {
-	c.bottom.build = buildFunc
-	c.RefreshBottom()
-}
-
-func (c *LayoutContainer) RefreshSideBar() {
-	fyne.Do(func() {
-		o := c.side.build()
+func (l *Layout) SetSideBar(buildFunc func() fyne.CanvasObject) {
+	l.sideBar.render = func() {
+		o := buildFunc()
 		if o != nil {
-			c.side.c.Objects = []fyne.CanvasObject{container.NewPadded(container.NewScroll(o))}
+			l.sideBar.container.Objects = []fyne.CanvasObject{container.NewPadded(container.NewScroll(o))}
 		}
-		c.side.c.Refresh()
+		l.RefreshSideBar()
+	}
+	l.sideBar.render()
+}
+
+func (l *Layout) MainFrame() *fyne.Container {
+	return l.mainFrame.container
+}
+
+func (l *Layout) SetMainFrame(buildFunc func() fyne.CanvasObject) {
+	l.mainFrame.render = func() {
+		o := buildFunc()
+		if o != nil {
+			l.mainFrame.container.Objects = []fyne.CanvasObject{container.NewPadded(container.NewScroll(o))}
+		}
+		l.RefreshMainFrame()
+	}
+	l.mainFrame.render()
+}
+
+func (l *Layout) Bottom() *fyne.Container {
+	return l.bottom.container
+}
+
+func (l *Layout) SetBottom(buildFunc func() fyne.CanvasObject) {
+	l.bottom.render = func() {
+		o := buildFunc()
+		if o != nil {
+			l.bottom.container.Objects = []fyne.CanvasObject{container.NewPadded(container.NewScroll(o))}
+		}
+		l.RefreshBottom()
+	}
+	l.bottom.render()
+}
+
+func (l *Layout) RenderSideBar() {
+	l.sideBar.render()
+}
+
+func (l *Layout) RenderMainFrame() {
+	l.mainFrame.render()
+}
+
+func (l *Layout) RenderBottom() {
+	l.bottom.render()
+}
+
+func (l *Layout) RefreshSideBar() {
+	fyne.Do(func() {
+		l.sideBar.container.Refresh()
 	})
 }
 
-func (c *LayoutContainer) RefreshMainFrame() {
+func (l *Layout) RefreshMainFrame() {
 	fyne.Do(func() {
-		o := c.main.build()
-		if o != nil {
-			c.main.c.Objects = []fyne.CanvasObject{container.NewPadded(container.NewScroll(o))}
-		}
-		c.main.c.Refresh()
+		l.mainFrame.container.Refresh()
 	})
 }
 
-func (c *LayoutContainer) RefreshBottom() {
+func (l *Layout) RefreshBottom() {
 	fyne.Do(func() {
-		o := c.bottom.build()
-		if o != nil {
-			c.bottom.c.Objects = []fyne.CanvasObject{container.NewPadded(container.NewScroll(o))}
-		}
-		c.bottom.c.Refresh()
+		l.bottom.container.Refresh()
 	})
 }
 
 func mainContainer(c *Context) {
-	splitH := container.NewHSplit(c.container.side.c, c.container.main.c)
+	splitH := container.NewHSplit(c.layout.sideBar.container, c.layout.mainFrame.container)
 	splitH.SetOffset(0.2)
 
-	splitV := container.NewVSplit(splitH, c.container.bottom.c)
+	splitV := container.NewVSplit(splitH, c.layout.bottom.container)
 	splitV.SetOffset(0.8)
 
 	c.window.SetContent(splitV)
@@ -115,17 +144,32 @@ func New(config Config) (*Context, error) {
 	w := a.NewWindow("Minder")
 	w.Resize(config.WindowSize)
 
-	c := &Context{
-		ctx:    context.Background(),
-		window: w,
-		container: &LayoutContainer{
-			side:   &SideContainer{c: container.NewStack()},
-			main:   &MainContainer{c: container.NewStack()},
-			bottom: &BottomContainer{c: container.NewStack()},
+	store := &Store{
+		Pathfinder: components.PathfinderState{
+			CurrentDir: binding.NewString(),
+			ShowHidden: binding.NewBool(),
+		},
+		PreviewPath: binding.NewString(),
+		Terminal: components.TerminalState{
+			Input: binding.NewString(),
 		},
 	}
-	c.Set("filePath", config.BasePath)
-	c.Set("logger", config.Logger)
+
+	err := store.Pathfinder.CurrentDir.Set(config.BasePath)
+	if err != nil {
+		return nil, err
+	}
+
+	c := &Context{
+		store:  store,
+		window: w,
+		logger: config.Logger,
+		layout: &Layout{
+			sideBar:   &LayoutContainer{container: container.NewStack()},
+			mainFrame: &LayoutContainer{container: container.NewStack()},
+			bottom:    &LayoutContainer{container: container.NewStack()},
+		},
+	}
 
 	mainContainer(c)
 

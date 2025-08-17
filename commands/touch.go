@@ -3,30 +3,29 @@ package commands
 import (
 	"fmt"
 	"os"
-
-	"github.com/meteormin/minder"
 )
 
 var cmdTouch = Cmd{
 	Name: "touch",
 	Args: []string{"<dst>"},
-	Exec: func(c *minder.Context, args []string) (string, error) {
+	Exec: func(c *Context, args []string) error {
 		return handleTouch(c, args[0])
 	},
 }
 
-func handleTouch(c *minder.Context, dst string) (string, error) {
+func handleTouch(c *Context, dst string) error {
 	fp, err := pathToAbs(c, dst)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	_, err = os.Create(fp)
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	c.Container().RefreshSideBar()
+	c.RefreshSideBar()
 
-	return fmt.Sprintf("touch: %s", fp), nil
+	_, err = fmt.Fprintf(c.ConsoleBuf, "touch: %s", fp)
+	return err
 }

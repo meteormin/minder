@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -12,19 +11,18 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
-	"github.com/meteormin/minder"
 )
 
 var cmdCopy = Cmd{
 	Name: "cp",
 	Args: []string{"<src>", "<dst>"},
-	Exec: func(c *minder.Context, args []string) (string, error) {
+	Exec: func(c *Context, args []string) error {
 		return handleCopy(c, args[0], args[1])
 	},
 }
 
 // copyEntry 패턴/".", 숨김 포함 여부까지 처리하는 엔트리 포인트
-func copyEntry(c *minder.Context, srcPattern, dst string) error {
+func copyEntry(c *Context, srcPattern, dst string) error {
 	// 1) "aDir/." → 내용만 복사
 	if dir, ok := asDotContents(srcPattern); ok {
 		return copyDirContents(c, dir, dst)
@@ -57,7 +55,7 @@ func copyEntry(c *minder.Context, srcPattern, dst string) error {
 	return nil
 }
 
-func copyAny(c *minder.Context, src, dst string) error {
+func copyAny(c *Context, src, dst string) error {
 	// dst가 디렉터리면 src 베이스 이름으로 붙임
 	if di, err := os.Stat(dst); err == nil && di.IsDir() {
 		dst = filepath.Join(dst, filepath.Base(src))
@@ -72,7 +70,7 @@ func copyAny(c *minder.Context, src, dst string) error {
 	return copyFile(c, src, dst)
 }
 
-func copyDir(c *minder.Context, src, dst string) error {
+func copyDir(c *Context, src, dst string) error {
 	// 자기 하위로 복사 금지
 	srcAbs, _ := filepath.Abs(src)
 	dstAbs, _ := filepath.Abs(dst)
@@ -126,7 +124,7 @@ func copyDir(c *minder.Context, src, dst string) error {
 	})
 }
 
-func copyFile(c *minder.Context, src, dst string) error {
+func copyFile(c *Context, src, dst string) error {
 	// 대상이 디렉터리라면 파일명 붙임
 	if di, err := os.Stat(dst); err == nil && di.IsDir() {
 		dst = filepath.Join(dst, filepath.Base(src))
@@ -152,9 +150,8 @@ func copyFile(c *minder.Context, src, dst string) error {
 	return copyOneFile(c, src, dst, srcFi.Mode().Perm())
 }
 
-func copyOneFile(c *minder.Context, src, dst string, perm fs.FileMode) error {
-	logger, _ := c.Get("logger").(*slog.Logger)
-
+func copyOneFile(c *Context, src, dst string, perm fs.FileMode) error {
+	logger := c.Logger
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
@@ -184,7 +181,7 @@ func copyOneFile(c *minder.Context, src, dst string, perm fs.FileMode) error {
 	return err
 }
 
-func resolveConflict(c *minder.Context, dst string) (string, error) {
+func resolveConflict(c *Context, dst string) (string, error) {
 	// 2-버튼 모달로 물어보기 (UI 스레드에서 생성)
 	ch := make(chan string, 1)
 	var dd dialog.Dialog
@@ -198,7 +195,7 @@ func resolveConflict(c *minder.Context, dst string) (string, error) {
 		grid := container.NewGridWithColumns(2, btnSkip, btnOverwrite)
 		content := container.NewVBox(msg, widget.NewSeparator(), grid)
 
-		dd = dialog.NewCustomWithoutButtons(title, content, c.Window())
+		dd = dialog.NewCustomWithoutButtons(title, content, c.Window)
 		dd.Show()
 	}
 	// UI 스레드에서 다이얼로그 띄우기
@@ -208,7 +205,7 @@ func resolveConflict(c *minder.Context, dst string) (string, error) {
 	return <-ch, nil
 }
 
-func copyDirContents(c *minder.Context, srcDir, dstDir string) error {
+func copyDirContents(c *Context, srcDir, dstDir string) error {
 	ents, err := os.ReadDir(srcDir)
 	if err != nil {
 		return err
@@ -233,25 +230,26 @@ func copyDirContents(c *minder.Context, srcDir, dstDir string) error {
 	return nil
 }
 
-func handleCopy(c *minder.Context, src string, dst string) (string, error) {
-	logger := c.Get("logger").(*slog.Logger)
+func handleCopy(c *Context, src string, dst string) error {
+	logger := c.Logger
 	absSrc, err := pathToAbs(c, src)
 	if err != nil {
 		logger.Error("failed path to abs", "src", src)
-		return "", err
+		return err
 	}
 	absDst, err := pathToAbs(c, dst)
 	if err != nil {
 		logger.Error("failed path to abs", "dst", dst)
-		return "", err
+		return err
 	}
 
 	err = copyEntry(c, absSrc, absDst)
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	c.Container().RefreshSideBar()
+	c.RefreshSideBar()
 
-	return fmt.Sprintf("cp: %s to %s", absSrc, absDst), nil
+	_, err = fmt.Fprintf(c.ConsoleBuf, "cp: %s to %s", absSrc, absDst)
+	return err
 }

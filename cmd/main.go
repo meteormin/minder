@@ -12,19 +12,11 @@ import (
 )
 
 var (
-	homeDir string
 	logPath = "/var/log/minder.log"
 	logger  *slog.Logger
 )
 
 func init() {
-	userHomeDir, err := os.UserHomeDir()
-	if err != nil {
-		panic(err)
-	}
-
-	homeDir = userHomeDir
-
 	f, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		logPath = "./minder.log"
@@ -67,16 +59,42 @@ func main() {
 		panic(err)
 	}
 
-	c.Container().SideBar(func() fyne.CanvasObject {
-		return components.Pathfinder(c)
+	c.Layout().SetSideBar(func() fyne.CanvasObject {
+		pf := components.NewPathfinder(components.PathfinderConfig{
+			FileTreeConfig: components.FileTreeConfig{
+				Window:     c.Window(),
+				RootDir:    c.Store().Pathfinder.CurrentDir,
+				ShowHidden: c.Store().Pathfinder.ShowHidden,
+				OnSelected: func(uid string) {
+					setErr := c.Store().PreviewPath.Set(uid)
+					if setErr != nil {
+						c.Logger().Error("failed select file", "err", setErr)
+						return
+					}
+				},
+			},
+			Logger: c.Logger(),
+		})
+		return pf.Container
 	})
 
-	c.Container().Bottom(func() fyne.CanvasObject {
-		return components.Terminal(c)
+	c.Layout().SetMainFrame(func() fyne.CanvasObject {
+		preview := components.NewPreview(components.PreviewConfig{
+			Logger: c.Logger(),
+			Path:   c.Store().PreviewPath,
+		})
+		return preview.PreviewPane.Root()
 	})
 
-	c.Container().MainFrame(func() fyne.CanvasObject {
-		return components.Preview(c)
+	c.Layout().SetBottom(func() fyne.CanvasObject {
+		term := components.NewTerminal(components.TerminalConfig{
+			Logger:         c.Logger(),
+			Window:         c.Window(),
+			Pwd:            c.Store().Pathfinder.CurrentDir,
+			Input:          c.Store().Terminal.Input,
+			RefreshSideBar: c.Layout().RenderSideBar,
+		})
+		return term.Container
 	})
 
 	c.Window().ShowAndRun()

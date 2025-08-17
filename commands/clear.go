@@ -1,16 +1,14 @@
 package commands
 
-import "github.com/meteormin/minder"
-
 var cmdClear = Cmd{
 	Name:  "clear",
 	Usage: "clear",
-	Exec: func(c *minder.Context, args []string) (string, error) {
+	Exec: func(c *Context, args []string) error {
 		return handleClear(c)
 	},
 }
 
-func handleClear(c *minder.Context) (string, error) {
-	c.Container().RefreshBottom()
-	return "", nil
+func handleClear(c *Context) error {
+	c.ConsoleBuf.Reset()
+	return nil
 }

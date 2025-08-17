@@ -7,21 +7,25 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"net/http"
+
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"fyne.io/fyne/v2/theme"
-	markdown "github.com/JohannesKaufmann/html-to-markdown"
-	"github.com/meteormin/minder"
+	"fyne.io/fyne/v2/data/binding"
+	// 필요 시
+	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/webp"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	markdown "github.com/JohannesKaufmann/html-to-markdown"
 )
 
 type Previewer struct {
@@ -30,6 +34,10 @@ type Previewer struct {
 }
 
 func (p *Previewer) RenderFile(path string) (fyne.CanvasObject, error) {
+	if path == "" {
+		return container.NewPadded(container.NewCenter(widget.NewLabel("no file selected"))), nil
+	}
+
 	ext := strings.ToLower(filepath.Ext(path))
 
 	var rendered fyne.CanvasObject
@@ -51,8 +59,7 @@ func (p *Previewer) RenderFile(path string) (fyne.CanvasObject, error) {
 		}
 	}
 
-	card := widget.NewCard(filepath.Base(path), ext, rendered)
-	return container.NewPadded(card), err
+	return widget.NewCard(filepath.Base(path), ext, rendered), err
 }
 
 func (p *Previewer) asImageReader(path string) (io.Reader, error) {
@@ -80,16 +87,28 @@ func (p *Previewer) asImageReader(path string) (io.Reader, error) {
 
 func (p *Previewer) isTextRenderable(path string) bool {
 	s, err := os.Stat(path)
-	if err != nil {
-		p.logger.Error("failed stat file", "err", err)
+	if err != nil || s.IsDir() {
 		return false
 	}
-
 	if s.Size() > p.maxTextRenderSize {
 		return false
 	}
 
-	return true
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer func(f *os.File) {
+		fErr := f.Close()
+		if fErr != nil {
+			p.logger.Error("failed close file", "err", fErr)
+		}
+	}(f)
+
+	buf := make([]byte, 512)
+	n, _ := f.Read(buf)
+	mime := http.DetectContentType(buf[:n])
+	return strings.HasPrefix(mime, "text/") || strings.Contains(mime, "json") || strings.Contains(mime, "xml")
 }
 
 func (p *Previewer) renderImage(r io.Reader, path string) (fyne.CanvasObject, error) {
@@ -245,22 +264,91 @@ func (p *Previewer) renderSmartText(path string) (fyne.CanvasObject, error) {
 	return root, nil
 }
 
-func Preview(c *minder.Context) fyne.CanvasObject {
-	logger, _ := c.Get("logger").(*slog.Logger)
-	selectedFile, _ := c.Get("selectedFile").(string)
+type PreviewPane struct {
+	p     *Previewer
+	stack *fyne.Container // 여기 안에 실제 렌더 결과만 바꿔 끼움
+	root  *fyne.Container
+
+	unsub func() // 바인딩 해제용
+	cur   string
+}
+
+func NewPreviewPane(p *Previewer) *PreviewPane {
+	st := container.NewStack() // 초기엔 비움
+	root := container.NewPadded(st)
+	return &PreviewPane{p: p, stack: st, root: root}
+}
+
+func (v *PreviewPane) Root() fyne.CanvasObject { return v.root }
+
+// 외부에서 직접 갱신(바인딩 없어도 됨)
+func (v *PreviewPane) SetPath(path string) {
+	if path == "" || path == v.cur {
+		return
+	}
+	v.cur = path
+
+	co, err := v.p.RenderFile(path) // 당신의 기존 함수 재사용
+	if co == nil {
+		co = container.NewCenter(widget.NewLabel(err.Error()))
+	}
+
+	// UI 스레드에서 컨텐츠 교체
+	fyne.Do(func() {
+		v.stack.Objects = []fyne.CanvasObject{co}
+		v.stack.Refresh()
+	})
+}
+
+// 선택: 바인딩을 붙여 자동으로 SetPath 호출
+func (v *PreviewPane) BindPath(b binding.String) {
+	// 중복 구독 방지
+	if v.unsub != nil {
+		v.unsub()
+		v.unsub = nil
+	}
+
+	l := binding.NewDataListener(func() {
+		path, _ := b.Get()
+		v.SetPath(path)
+	})
+	b.AddListener(l)
+	v.unsub = func() { b.RemoveListener(l) }
+
+	// 초기 반영
+	if init, err := b.Get(); err == nil && init != "" {
+		v.SetPath(init)
+	}
+}
+
+func (v *PreviewPane) Unbind() {
+	if v.unsub != nil {
+		v.unsub()
+		v.unsub = nil
+	}
+}
+
+type PreviewConfig struct {
+	Logger *slog.Logger
+	Path   binding.String
+}
+
+type Preview struct {
+	Path        binding.String
+	PreviewPane *PreviewPane
+}
+
+func NewPreview(cfg PreviewConfig) *Preview {
 	p := &Previewer{
-		logger:            logger,
+		logger:            cfg.Logger,
 		maxTextRenderSize: 1024 * 1024, // 1MB
 	}
 
-	if selectedFile == "" {
-		return container.NewPadded(container.NewCenter(widget.NewLabel("no file selected")))
-	}
+	pane := NewPreviewPane(p)
+	pane.BindPath(cfg.Path)
 
-	rendered, err := p.RenderFile(selectedFile)
-	if err != nil {
-		logger.Error("failed preview", "err", err)
+	return &Preview{
+		Path:        cfg.Path,
+		PreviewPane: pane,
 	}
-
-	return container.NewPadded(rendered)
 }

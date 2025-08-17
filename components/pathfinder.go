@@ -10,34 +10,40 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"github.com/meteormin/minder"
 )
 
 type FileTree struct {
 	*widget.Tree
-	rootDir    string
-	showHidden bool
+	rootDir    binding.String
+	showHidden binding.Bool
+	win        fyne.Window
+	onSelected func(string)
+
+	open   map[string]struct{} // ★ 현재 열려 있는 브랜치 집합
+	unsubs []func()            // 바인딩 리스너 해제
 }
 
-// NewFileTree 지정한 루트로
-func NewFileTree(root string, showHidden bool, onSelected func(uid string), w fyne.Window) (*FileTree, error) {
-	if root == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return nil, err
-		}
-		root = wd
-	}
+type FileTreeConfig struct {
+	Window     fyne.Window
+	RootDir    binding.String
+	ShowHidden binding.Bool
+	OnSelected func(uid string)
+}
 
+func NewFileTreeWithData(cfg FileTreeConfig) (*FileTree, error) {
 	ft := &FileTree{
-		rootDir:    root,
-		showHidden: showHidden,
+		rootDir:    cfg.RootDir,
+		showHidden: cfg.ShowHidden,
+		win:        cfg.Window,
+		onSelected: cfg.OnSelected,
+		open:       map[string]struct{}{}, // ★
 	}
 
-	// ✅ 콜백 생성자 사용
+	// 콜백 기반 Tree
 	ft.Tree = widget.NewTree(
 		ft.childUIDs,
 		ft.isBranch,
@@ -45,31 +51,35 @@ func NewFileTree(root string, showHidden bool, onSelected func(uid string), w fy
 		ft.updateItem,
 	)
 
-	// ✅ 루트 지정
-	ft.Tree.Root = ft.rootDir
-	ft.Tree.OpenBranch(ft.rootDir)
+	// 루트 설정
+	root, err := ft.rootDir.Get()
+	if err != nil {
+		return nil, err
+	}
 
-	// ✅ 폴더 토글
+	ft.Tree.Root = root
+	ft.open[root] = struct{}{} // ★ 루트를 열린 것으로 간주
+	ft.Tree.OpenBranch(root)
 	ft.Tree.OnSelected = func(uid string) {
 		ft.Tree.UnselectAll()
 		if uid == "" {
 			return
 		}
 
-		// 루트 밖 선택 방지
-		if rel, err := filepath.Rel(ft.rootDir, uid); err != nil || strings.HasPrefix(rel, "..") {
-			dialog.ShowError(err, w)
+		// 루트 경계 체크
+		curRoot, _ := ft.rootDir.Get()
+		if rel, err := filepath.Rel(curRoot, uid); err != nil || strings.HasPrefix(rel, "..") {
+			dialog.ShowError(err, ft.win)
 			return
 		}
 
 		info, err := os.Lstat(uid)
 		if err != nil {
-			dialog.ShowError(err, w)
+			dialog.ShowError(err, ft.win)
 			return
 		}
 
 		isDir := info.IsDir()
-		// 심볼릭 링크가 디렉터리를 가리키면 디렉터리처럼 취급
 		if !isDir && info.Mode()&os.ModeSymlink != 0 {
 			if ti, err := os.Stat(uid); err == nil && ti.IsDir() {
 				isDir = true
@@ -84,33 +94,89 @@ func NewFileTree(root string, showHidden bool, onSelected func(uid string), w fy
 			}
 			return
 		}
-		onSelected(uid)
+
+		if ft.onSelected != nil {
+			ft.onSelected(uid)
+		}
 	}
 
-	// 화살표(▶)로 폴더가 열릴 때도 동일 로직 수행
+	// 브랜치 토글 시 아이콘 새로고침
 	ft.Tree.OnBranchOpened = func(uid string) {
+		ft.open[uid] = struct{}{} // ★
+		ft.Tree.RefreshItem(uid)  // 아이콘/자식 목록 갱신
+	}
+	ft.Tree.OnBranchClosed = func(uid string) {
+		delete(ft.open, uid) // ★
 		ft.Tree.RefreshItem(uid)
 	}
 
-	ft.Tree.OnBranchClosed = func(uid string) {
-		ft.Tree.RefreshItem(uid)
-	}
+	// ✨ 바인딩 연동: RootDir/ShowHidden 값이 바뀌면 자동 갱신
+	ft.bind()
 
 	return ft, nil
 }
 
+func (ft *FileTree) Refresh() {
+	ft.Tree.Refresh()
+	ft.RefreshItem(ft.Root)
+}
+
+// SetRootDir 외부에서 문자열로 루트 바꾸고 싶을 때도 binding으로 통일
 func (ft *FileTree) SetRootDir(root string) {
 	if root == "" {
 		return
 	}
-	ft.rootDir = root
-	ft.Tree.Root = root
-	ft.Tree.OpenBranch(root)
-	ft.Tree.Refresh()
+	_ = ft.rootDir.Set(root) // 리스너에서 UI 반영
+}
+
+// --- 내부 구현 ---
+
+// NewFileTreeWithData() 내부 마지막에 한 번만 호출
+func (ft *FileTree) bind() {
+	// 중복 구독 방지: 기존 리스너 해제
+	for _, u := range ft.unsubs {
+		u()
+	}
+	ft.unsubs = nil
+
+	// 1) RootDir 변경 시: 루트 교체 + 브랜치 열기 + Refresh
+	rdL := binding.NewDataListener(func() {
+		root, _ := ft.rootDir.Get()
+		fyne.Do(func() {
+			// 기존 열린 브랜치 닫기(시각적 일관성 확보 – 선택)
+			for uid := range ft.open {
+				ft.Tree.CloseBranch(uid)
+			}
+			ft.open = map[string]struct{}{} // ★ 리셋
+
+			ft.Tree.Root = root
+			ft.open[root] = struct{}{} // ★ 새 루트 등록
+			ft.Tree.OpenBranch(root)
+
+			// 루트부터 다시 자식 계산
+			ft.Tree.RefreshItem(root) // ★ 중요
+			ft.Tree.Refresh()
+		})
+	})
+	ft.rootDir.AddListener(rdL)
+	ft.unsubs = append(ft.unsubs, func() { ft.rootDir.RemoveListener(rdL) })
+
+	// 2) ShowHidden 변경 시: 목록만 새로고침
+	shL := binding.NewDataListener(func() {
+		fyne.Do(func() {
+			for uid := range ft.open { // ★ 열린 부모마다
+				ft.Tree.RefreshItem(uid) //   자식 목록 다시 계산
+			}
+			ft.Tree.Refresh() // 화면 재도색
+		})
+	})
+	ft.showHidden.AddListener(shL)
+	ft.unsubs = append(ft.unsubs, func() { ft.showHidden.RemoveListener(shL) })
 }
 
 func (ft *FileTree) childUIDs(uid string) []string {
-	path := ft.rootDir
+	root, _ := ft.rootDir.Get()
+	path := root
 	if uid != "" {
 		path = uid
 	}
@@ -121,6 +187,8 @@ func (ft *FileTree) childUIDs(uid string) []string {
 		return nil
 	}
 
+	showHidden, _ := ft.showHidden.Get()
+
 	type item struct {
 		name string
 		path string
@@ -129,14 +197,12 @@ func (ft *FileTree) childUIDs(uid string) []string {
 	var tmp []item
 	for _, e := range entries {
 		name := e.Name()
-		// 숨김 파일/폴더 제외
-		if !ft.showHidden && strings.HasPrefix(name, ".") {
+		if !showHidden && strings.HasPrefix(name, ".") {
 			continue
 		}
 		full := filepath.Join(path, name)
 		isDir := e.IsDir()
-
-		// 링크가 디렉터리를 가리키면 디렉터리로 간주
+		// 심볼릭 링크가 디렉터리를 가리키면 디렉터리로 간주
 		if !isDir {
 			if info, err := os.Lstat(full); err == nil && info.Mode()&os.ModeSymlink != 0 {
 				if ti, err := os.Stat(full); err == nil && ti.IsDir() {
@@ -155,7 +221,7 @@ func (ft *FileTree) childUIDs(uid string) []string {
 		return strings.ToLower(tmp[i].name) < strings.ToLower(tmp[j].name)
 	})
 
-	var uids []string
+	uids := make([]string, 0, len(tmp))
 	for _, it := range tmp {
 		uids = append(uids, it.path)
 	}
@@ -194,7 +260,6 @@ func (ft *FileTree) updateItem(uid string, branch bool, obj fyne.CanvasObject) {
 		return
 	}
 	box := obj.(*fyne.Container)
-	// [0]=Icon, [1]=Label 가정
 	if len(box.Objects) >= 2 {
 		if ic, ok := box.Objects[0].(*widget.Icon); ok {
 			if branch {
@@ -209,35 +274,53 @@ func (ft *FileTree) updateItem(uid string, branch bool, obj fyne.CanvasObject) {
 	}
 }
 
-func Pathfinder(c *minder.Context) fyne.CanvasObject {
-	logger, _ := c.Get("logger").(*slog.Logger)
-	currentDir, ok := c.Get("filePath").(string)
-	if !ok {
-		currentDir = ""
+// Destroy 필요 시 호출: 바인딩 리스너 해제
+func (ft *FileTree) Destroy() {
+	for _, u := range ft.unsubs {
+		u()
 	}
+	ft.unsubs = nil
+}
 
-	showHidden, ok := c.Get("hidden").(bool)
-	if !ok {
-		showHidden = false
-	}
+type PathfinderState struct {
+	CurrentDir binding.String
+	ShowHidden binding.Bool
+}
 
-	label := widget.NewLabel(currentDir)
-	fTree, err := NewFileTree(currentDir, showHidden, func(uid string) {
-		c.Set("selectedFile", uid)
-		c.Container().RefreshMainFrame()
-	}, c.Window())
+type Pathfinder struct {
+	State     PathfinderState
+	Container *fyne.Container
+}
+
+type PathfinderConfig struct {
+	FileTreeConfig
+	Logger *slog.Logger
+}
+
+func NewPathfinder(cfg PathfinderConfig) *Pathfinder {
+	label := widget.NewLabelWithData(cfg.RootDir)
+	fTree, err := NewFileTreeWithData(cfg.FileTreeConfig)
 	if err != nil {
-		logger.Error("failed new file tree", "err", err)
+		cfg.Logger.Error("failed new file tree", "err", err)
 		panic(err)
 	}
 
 	check := widget.NewCheck("hidden", func(b bool) {
-		c.Set("hidden", b)
-		c.Container().RefreshSideBar()
+		err = cfg.ShowHidden.Set(b)
+		if err != nil {
+			cfg.Logger.Error("failed set show hidden", "err", err)
+		}
 	})
-	check.Checked = showHidden
 
 	topBox := container.NewVBox(label, check)
 
-	return container.NewBorder(topBox, nil, nil, nil, fTree)
+	c := container.NewBorder(topBox, nil, nil, nil, fTree)
+
+	return &Pathfinder{
+		State: PathfinderState{
+			CurrentDir: cfg.RootDir,
+			ShowHidden: cfg.ShowHidden,
+		},
+		Container: c,
+	}
 }

@@ -8,19 +8,9 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
-
-	"github.com/meteormin/minder"
 )
 
-type conflictMode int
-
-const (
-	modeAsk conflictMode = iota
-	modeOverwriteAll
-	modeSkipAll
-)
-
-func pathToAbs(c *minder.Context, dst string) (string, error) {
+func pathToAbs(c *Context, dst string) (string, error) {
 	var fp string
 	if filepath.IsAbs(dst) {
 		if _, err := os.Stat(dst); err != nil {
@@ -29,7 +19,7 @@ func pathToAbs(c *minder.Context, dst string) (string, error) {
 		fp = filepath.Dir(dst)
 	}
 
-	currentDir, _ := c.Get("filePath").(string)
+	currentDir, _ := c.Pwd.Get()
 	s, err := os.Lstat(currentDir)
 	if err != nil {
 		return "", err

@@ -7,7 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/meteormin/minder"
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/data/binding"
 )
 
 var commands = map[string]Cmd{
@@ -25,29 +26,37 @@ var (
 	cmdHelp = Cmd{
 		Name:  "help",
 		Usage: "help",
-		Exec: func(_ *minder.Context, _ []string) (string, error) {
-			return help()
+		Exec: func(c *Context, _ []string) error {
+			return help(c)
 		},
 	}
 
 	cmdExit = Cmd{
 		Name:  "exit",
 		Usage: "exit",
-		Exec: func(c *minder.Context, _ []string) (string, error) {
+		Exec: func(c *Context, _ []string) error {
 			return exit(c)
 		},
 	}
 )
 
+type Context struct {
+	Logger         *slog.Logger
+	Window         fyne.Window
+	Pwd            binding.String
+	ConsoleBuf     *strings.Builder
+	RefreshSideBar func()
+}
+
 type Cmd struct {
 	Name  string
 	Args  []string
 	Usage string
-	Exec  func(c *minder.Context, args []string) (string, error)
+	Exec  func(c *Context, args []string) error
 }
 
-func (cmd Cmd) history(c *minder.Context) {
-	logger, _ := c.Get("logger").(*slog.Logger)
+func (cmd Cmd) history(c *Context) {
+	logger := c.Logger
 	home, err := os.UserHomeDir()
 	if err != nil {
 		home, err = os.Getwd()
@@ -96,28 +105,36 @@ func parseArgs(cmd string) Cmd {
 	return c
 }
 
-func help() (string, error) {
-	sb := strings.Builder{}
-	sb.WriteString("Usage: COMMAND [ARG...]\n\n")
-	sb.WriteString("Available Commands:\n")
-	for name, c := range commands {
-		var usage string
-		if c.Usage != "" {
-			usage = c.Usage
-		} else {
-			usage = name + " " + strings.Join(c.Args, " ")
-		}
-		sb.WriteString("  " + usage + "\n")
+func help(c *Context) error {
+	if _, err := c.ConsoleBuf.WriteString("Usage: COMMAND [ARG...]\n\n"); err != nil {
+		return err
 	}
-	return sb.String(), nil
+	if _, err := c.ConsoleBuf.WriteString("Available Commands:\n"); err != nil {
+		return err
+	}
+
+	for name, cmd := range commands {
+		var usage string
+		if cmd.Usage != "" {
+			usage = cmd.Usage
+		} else {
+			usage = name + " " + strings.Join(cmd.Args, " ")
+		}
+		_, err := c.ConsoleBuf.WriteString("  " + usage + "\n")
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-func exit(c *minder.Context) (string, error) {
-	c.Window().Close()
-	return "", nil
+func exit(c *Context) error {
+	c.Window.Close()
+	return nil
 }
 
-func Call(c *minder.Context, cmd string) (string, error) {
+func Call(c *Context, cmd string) error {
 	args := parseArgs(cmd)
 	args.history(c)
 	return args.Exec(c, args.Args)

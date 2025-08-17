@@ -10,13 +10,12 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
-	"github.com/meteormin/minder"
 )
 
 var cmdRm = Cmd{
 	Name: "rm",
 	Args: []string{"<src>", "<dst>"},
-	Exec: func(c *minder.Context, args []string) (string, error) {
+	Exec: func(c *Context, args []string) error {
 		return handleRemove(c, args[0])
 	},
 }
@@ -160,10 +159,10 @@ func isDangerousRoot(p string) bool {
 }
 
 // 시그니처를 handleCopy와 "같이" 맞추기 위해 dst는 무시합니다.
-func handleRemove(c *minder.Context, src string) (string, error) {
-	logger := c.Get("logger").(*slog.Logger)
+func handleRemove(c *Context, src string) error {
+	logger := c.Logger
 	rm := &remover{
-		window: c.Window(),
+		window: c.Window,
 		logger: logger,
 		mode:   rmAsk,
 	}
@@ -171,15 +170,16 @@ func handleRemove(c *minder.Context, src string) (string, error) {
 	absSrc, err := pathToAbs(c, src)
 	if err != nil {
 		logger.Error("failed path to abs", "src", src, "err", err)
-		return "", err
+		return err
 	}
 
 	// ⚠️ 반드시 고루틴에서 실행하고, 오류 표시는 fyne.Do(dialog...)로
 	if err = rm.removeEntry(absSrc); err != nil {
-		return "", err
+		return err
 	}
 
-	c.Container().RefreshSideBar()
+	c.RefreshSideBar()
 
-	return fmt.Sprintf("rm: %s", absSrc), nil
+	_, err = fmt.Fprintf(c.ConsoleBuf, "rm: %s", absSrc)
+	return err
 }

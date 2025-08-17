@@ -2,23 +2,20 @@ package commands
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
-
-	"github.com/meteormin/minder"
 )
 
 var cmdMove = Cmd{
 	Name: "mv",
 	Args: []string{"<src>", "<dst>"},
-	Exec: func(c *minder.Context, args []string) (string, error) {
+	Exec: func(c *Context, args []string) error {
 		return handleMove(c, args[0], args[1])
 	},
 }
 
 // moveEntry mv도 동일 정책
-func moveEntry(c *minder.Context, srcPattern, dst string) error {
+func moveEntry(c *Context, srcPattern, dst string) error {
 	// 1) "aDir/." → 내용만 복사
 	if dir, ok := asDotContents(srcPattern); ok {
 		return copyDirContents(c, dir, dst)
@@ -50,7 +47,7 @@ func moveEntry(c *minder.Context, srcPattern, dst string) error {
 }
 
 // moveDirContents copyDirContents와 대칭
-func moveDirContents(c *minder.Context, srcDir, dstDir string) error {
+func moveDirContents(c *Context, srcDir, dstDir string) error {
 	ents, err := os.ReadDir(srcDir)
 	if err != nil {
 		return err
@@ -68,7 +65,7 @@ func moveDirContents(c *minder.Context, srcDir, dstDir string) error {
 	return nil
 }
 
-func moveAny(c *minder.Context, src, dst string) error {
+func moveAny(c *Context, src, dst string) error {
 	// dst가 디렉터리면 src 베이스 이름으로 붙임
 	if di, err := os.Stat(dst); err == nil && di.IsDir() {
 		dst = filepath.Join(dst, filepath.Base(src))
@@ -87,25 +84,26 @@ func moveAny(c *minder.Context, src, dst string) error {
 	return os.RemoveAll(src)
 }
 
-func handleMove(c *minder.Context, src string, dst string) (string, error) {
-	logger := c.Get("logger").(*slog.Logger)
+func handleMove(c *Context, src string, dst string) error {
+	logger := c.Logger
 	absSrc, err := pathToAbs(c, src)
 	if err != nil {
 		logger.Error("failed path to abs", "src", src)
-		return "", err
+		return err
 	}
 	absDst, err := pathToAbs(c, dst)
 	if err != nil {
 		logger.Error("failed path to abs", "dst", dst)
-		return "", err
+		return err
 	}
 
 	err = moveEntry(c, absSrc, absDst)
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	c.Container().RefreshSideBar()
+	c.RefreshSideBar()
 
-	return fmt.Sprintf("mv: %s to %s", absSrc, absDst), nil
+	_, err = fmt.Fprintf(c.ConsoleBuf, "mv: %s to %s", absSrc, absDst)
+	return err
 }
