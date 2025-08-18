@@ -25,6 +25,12 @@ func (cs *Console) println(line string) {
 	cs.buf.WriteString(line)
 	cs.buf.WriteByte('\n')
 	cs.mu.Unlock()
+	text := cs.buf.String()
+	fyne.Do(func() {
+		cs.grid.SetText(text)
+		// 레이아웃 반영 직후 바닥으로
+		cs.scroll.ScrollToBottom()
+	})
 }
 
 func (cs *Console) render() {

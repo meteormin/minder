@@ -1,7 +1,6 @@
 package components
 
 import (
-	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -92,12 +91,11 @@ func NewFileTreeWithData(cfg FileTreeConfig) (*FileTree, error) {
 			} else {
 				ft.Tree.OpenBranch(uid)
 			}
-			return
-		}
-
-		if ft.onSelected != nil {
+		} else if ft.onSelected != nil {
 			ft.onSelected(uid)
 		}
+
+		ft.win.Clipboard().SetContent(uid)
 	}
 
 	// 브랜치 토글 시 아이콘 새로고침
@@ -183,7 +181,7 @@ func (ft *FileTree) childUIDs(uid string) []string {
 
 	entries, err := os.ReadDir(path)
 	if err != nil {
-		log.Printf("readDir error: %s: %v", path, err)
+		fyne.LogError("read dir failed "+path, err)
 		return nil
 	}
 

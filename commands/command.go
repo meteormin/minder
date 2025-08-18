@@ -6,23 +6,29 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/data/binding"
 )
 
-var commands = map[string]Cmd{
-	cmdCd.Name:    cmdCd,
-	cmdClear.Name: cmdClear,
-	cmdTouch.Name: cmdTouch,
-	cmdMkdir.Name: cmdMkdir,
-	cmdCopy.Name:  cmdCopy,
-	cmdMove.Name:  cmdMove,
-	cmdRm.Name:    cmdRm,
-	cmdExit.Name:  cmdExit,
-}
+const historyFile = ".minder_history"
 
 var (
+	mu sync.Mutex
+
+	commands = map[string]Cmd{
+		cmdCd.Name:      cmdCd,
+		cmdClear.Name:   cmdClear,
+		cmdTouch.Name:   cmdTouch,
+		cmdMkdir.Name:   cmdMkdir,
+		cmdCopy.Name:    cmdCopy,
+		cmdMove.Name:    cmdMove,
+		cmdRm.Name:      cmdRm,
+		cmdHistory.Name: cmdHistory,
+		cmdExit.Name:    cmdExit,
+	}
+
 	cmdHelp = Cmd{
 		Name:  "help",
 		Usage: "help",
@@ -36,6 +42,14 @@ var (
 		Usage: "exit",
 		Exec: func(c *Context, _ []string) error {
 			return exit(c)
+		},
+	}
+
+	cmdHistory = Cmd{
+		Name:  "history",
+		Usage: "history",
+		Exec: func(c *Context, _ []string) error {
+			return history(c)
 		},
 	}
 )
@@ -56,6 +70,9 @@ type Cmd struct {
 }
 
 func (cmd Cmd) history(c *Context) {
+	mu.Lock()
+	defer mu.Unlock()
+
 	logger := c.Logger
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -66,7 +83,7 @@ func (cmd Cmd) history(c *Context) {
 	}
 
 	pid := os.Getpid()
-	fp := filepath.Join(home, ".minder_history")
+	fp := filepath.Join(home, historyFile)
 	file, err := os.OpenFile(fp, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		logger.Error("failed open file", "file", fp, "err", err)
@@ -132,6 +149,29 @@ func help(c *Context) error {
 func exit(c *Context) error {
 	c.Window.Close()
 	return nil
+}
+
+func history(c *Context) error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home, err = os.Getwd()
+		if err != nil {
+			home = "./"
+		}
+	}
+
+	fp := filepath.Join(home, historyFile)
+
+	h, err := os.ReadFile(fp)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.ConsoleBuf.Write(h)
+	return err
 }
 
 func Call(c *Context, cmd string) error {

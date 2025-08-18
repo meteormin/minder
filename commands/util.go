@@ -13,10 +13,11 @@ import (
 func pathToAbs(c *Context, dst string) (string, error) {
 	var fp string
 	if filepath.IsAbs(dst) {
-		if _, err := os.Stat(dst); err != nil {
+		fp = filepath.Dir(dst)
+		if _, err := os.Stat(fp); err != nil {
 			return "", err
 		}
-		fp = filepath.Dir(dst)
+		return fp, nil
 	}
 
 	currentDir, _ := c.Pwd.Get()
@@ -25,12 +26,22 @@ func pathToAbs(c *Context, dst string) (string, error) {
 		return "", err
 	}
 
-	if s.IsDir() {
+	isDir := s.IsDir()
+	if !isDir && s.Mode()&os.ModeSymlink != 0 {
+		if ti, err := os.Stat(currentDir); err == nil && ti.IsDir() {
+			isDir = true
+		}
+	}
+
+	if isDir {
 		fp = filepath.Join(currentDir, dst)
 	} else {
 		fp = filepath.Join(filepath.Dir(currentDir), dst)
 	}
 
+	if _, err = os.Stat(fp); err != nil {
+		return "", err
+	}
 	return fp, nil
 }
 
