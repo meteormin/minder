@@ -58,7 +58,7 @@ func (l *Layout) SetSideBar(buildFunc func() fyne.CanvasObject) {
 	l.sideBar.render = func() {
 		o := buildFunc()
 		if o != nil {
-			l.sideBar.container.Objects = []fyne.CanvasObject{container.NewPadded(container.NewScroll(o))}
+			l.sideBar.container.Objects = []fyne.CanvasObject{container.NewScroll(o)}
 		}
 		l.RefreshSideBar()
 	}
@@ -73,7 +73,7 @@ func (l *Layout) SetMainFrame(buildFunc func() fyne.CanvasObject) {
 	l.mainFrame.render = func() {
 		o := buildFunc()
 		if o != nil {
-			l.mainFrame.container.Objects = []fyne.CanvasObject{container.NewPadded(container.NewScroll(o))}
+			l.mainFrame.container.Objects = []fyne.CanvasObject{container.NewScroll(o)}
 		}
 		l.RefreshMainFrame()
 	}
@@ -88,7 +88,7 @@ func (l *Layout) SetBottom(buildFunc func() fyne.CanvasObject) {
 	l.bottom.render = func() {
 		o := buildFunc()
 		if o != nil {
-			l.bottom.container.Objects = []fyne.CanvasObject{container.NewPadded(container.NewScroll(o))}
+			l.bottom.container.Objects = []fyne.CanvasObject{container.NewScroll(o)}
 		}
 		l.RefreshBottom()
 	}
