@@ -108,21 +108,15 @@ func (l *Layout) RenderBottom() {
 }
 
 func (l *Layout) RefreshSideBar() {
-	fyne.Do(func() {
-		l.sideBar.container.Refresh()
-	})
+	l.sideBar.container.Refresh()
 }
 
 func (l *Layout) RefreshMainFrame() {
-	fyne.Do(func() {
-		l.mainFrame.container.Refresh()
-	})
+	l.mainFrame.container.Refresh()
 }
 
 func (l *Layout) RefreshBottom() {
-	fyne.Do(func() {
-		l.bottom.container.Refresh()
-	})
+	l.bottom.container.Refresh()
 }
 
 func mainContainer(c *Context) {

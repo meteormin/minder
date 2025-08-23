@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -8,6 +9,9 @@ var cmdCd = Cmd{
 	Name: "cd",
 	Args: []string{"<dst>"},
 	Exec: func(c *Context, args []string) error {
+		if len(args) == 0 {
+			return errors.New("cd: missing argument")
+		}
 		return handleChangeDirectory(c, args[0])
 	},
 }

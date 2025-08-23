@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -16,6 +17,9 @@ var cmdRm = Cmd{
 	Name: "rm",
 	Args: []string{"<src>", "<dst>"},
 	Exec: func(c *Context, args []string) error {
+		if len(args) == 0 {
+			return errors.New("rm: missing argument")
+		}
 		return handleRemove(c, args[0])
 	},
 }

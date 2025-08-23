@@ -10,6 +10,9 @@ var cmdMove = Cmd{
 	Name: "mv",
 	Args: []string{"<src>", "<dst>"},
 	Exec: func(c *Context, args []string) error {
+		if len(args) < 2 {
+			return fmt.Errorf("mv: missing argument")
+		}
 		return handleMove(c, args[0], args[1])
 	},
 }

@@ -9,6 +9,9 @@ var cmdMkdir = Cmd{
 	Name: "mkdir",
 	Args: []string{"<dst>"},
 	Exec: func(c *Context, args []string) error {
+		if len(args) == 0 {
+			return fmt.Errorf("mkdir: missing argument")
+		}
 		return handleMakeDirectory(c, args[0])
 	},
 }

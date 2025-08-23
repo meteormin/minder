@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 )
@@ -9,6 +10,9 @@ var cmdTouch = Cmd{
 	Name: "touch",
 	Args: []string{"<dst>"},
 	Exec: func(c *Context, args []string) error {
+		if len(args) == 0 {
+			return errors.New("touch: missing argument")
+		}
 		return handleTouch(c, args[0])
 	},
 }

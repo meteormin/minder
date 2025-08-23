@@ -17,6 +17,9 @@ var cmdCopy = Cmd{
 	Name: "cp",
 	Args: []string{"<src>", "<dst>"},
 	Exec: func(c *Context, args []string) error {
+		if len(args) < 2 {
+			return fmt.Errorf("cp: missing argument")
+		}
 		return handleCopy(c, args[0], args[1])
 	},
 }
